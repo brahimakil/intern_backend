@@ -5,10 +5,17 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Enable CORS for frontend
+  // Enable CORS for frontend (allow all origins in production if needed, or specify)
   app.enableCors({
-    origin: 'http://localhost:5173',
+    origin: [
+      'http://localhost:5173',
+      'https://intern-admin-zeta.vercel.app',
+    ],
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    exposedHeaders: ['Content-Range', 'X-Content-Range'],
+    maxAge: 3600,
   });
 
   // Enable validation
@@ -21,7 +28,7 @@ async function bootstrap() {
   );
 
   const port = process.env.PORT || 3000;
-  await app.listen(port);
-  console.log(`🚀 Backend running on http://localhost:${port}`);
+  await app.listen(port, '0.0.0.0'); // Listen on all interfaces for Vercel
+  console.log(`🚀 Backend running on port ${port}`);
 }
 bootstrap();

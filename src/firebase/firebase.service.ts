@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as admin from 'firebase-admin';
-import * as path from 'path';
 
 @Injectable()
 export class FirebaseService {
@@ -8,14 +8,20 @@ export class FirebaseService {
   private storageInstance: admin.storage.Storage;
   private authInstance: admin.auth.Auth;
 
-  constructor() {
+  constructor(private configService: ConfigService) {
     if (admin.apps.length === 0) {
-      const serviceAccount = require(path.join(__dirname, '../../internshipsystem-43e2c-firebase-adminsdk-fbsvc-0f898554e7.json'));
-      
+      const projectId = this.configService.get<string>('FIREBASE_PROJECT_ID');
+      const clientEmail = this.configService.get<string>('FIREBASE_CLIENT_EMAIL');
+      const privateKey = this.configService.get<string>('FIREBASE_PRIVATE_KEY')?.replace(/\\n/g, '\n');
+      const storageBucket = this.configService.get<string>('FIREBASE_STORAGE_BUCKET');
+
       admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-        databaseURL: 'https://internshipsystem-43e2c.firebaseio.com',
-        storageBucket: 'internshipsystem-43e2c.firebasestorage.app',
+        credential: admin.credential.cert({
+          projectId,
+          clientEmail,
+          privateKey,
+        }),
+        storageBucket,
       });
     }
 

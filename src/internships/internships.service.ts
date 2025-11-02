@@ -9,50 +9,81 @@ export class InternshipsService {
   async findAll() {
     try {
       const firestore = this.firebaseService.firestore;
-      const internshipsSnapshot = await firestore.collection('internships').get();
+      
+      // Fetch all data in parallel
+      const [internshipsSnapshot, companiesSnapshot, applicationsSnapshot] = await Promise.all([
+        firestore.collection('internships').get(),
+        firestore.collection('companies').get(),
+        firestore.collection('applications').get(),
+      ]);
+      
+      // Build company map
+      const companyMap = new Map<string, any>();
+      companiesSnapshot.docs.forEach((doc) => {
+        const data = doc.data();
+        companyMap.set(doc.id, {
+          name: data?.name || 'Unknown Company',
+          logoUrl: data?.logoUrl || '',
+        });
+      });
+
+      // Build applicants count map
+      const applicantsCountMap = new Map<string, number>();
+      applicationsSnapshot.docs.forEach((doc) => {
+        const internshipId = doc.data().internshipId;
+        if (internshipId) {
+          applicantsCountMap.set(
+            internshipId,
+            (applicantsCountMap.get(internshipId) || 0) + 1
+          );
+        }
+      });
+
+      // Map internships with company data and applicants count
+      const internships = internshipsSnapshot.docs.map((doc) => {
+        const data = doc.data();
+        const company = companyMap.get(data.companyId) || {
+          name: 'Unknown Company',
+          logoUrl: '',
+        };
+
+        return {
+          id: doc.id,
+          ...data,
+          companyName: company.name,
+          companyLogo: company.logoUrl,
+          applicantsCount: applicantsCountMap.get(doc.id) || 0,
+        };
+      });
+
+      return internships;
+    } catch (error) {
+      console.error('Error fetching internships:', error);
+      throw new Error('Failed to fetch internships');
+    }
+  }
+
+  async findAllMinimal() {
+    try {
+      const firestore = this.firebaseService.firestore;
+      const internshipsSnapshot = await firestore
+        .collection('internships')
+        .select('title', 'companyId')
+        .get();
       
       const internships: any[] = [];
       for (const doc of internshipsSnapshot.docs) {
         const data = doc.data();
-        
-        // Fetch company details
-        let companyName = 'Unknown Company';
-        let companyLogo = '';
-        
-        if (data.companyId) {
-          try {
-            const companyDoc = await firestore.collection('companies').doc(data.companyId).get();
-            if (companyDoc.exists) {
-              const companyData = companyDoc.data();
-              if (companyData) {
-                companyName = companyData.name || companyName;
-                companyLogo = companyData.logoUrl || '';
-              }
-            }
-          } catch (err) {
-            console.error('Error fetching company:', err);
-          }
-        }
-
-        // Get applicants count
-        const applicationsSnapshot = await firestore
-          .collection('applications')
-          .where('internshipId', '==', doc.id)
-          .count()
-          .get();
-
         internships.push({
           id: doc.id,
-          ...data,
-          companyName,
-          companyLogo,
-          applicantsCount: applicationsSnapshot.data().count,
+          title: data.title || 'Unknown',
+          companyId: data.companyId || '',
         });
       }
 
       return internships;
     } catch (error) {
-      console.error('Error fetching internships:', error);
+      console.error('Error fetching internships (minimal):', error);
       throw new Error('Failed to fetch internships');
     }
   }

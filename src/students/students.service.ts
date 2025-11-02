@@ -9,29 +9,60 @@ export class StudentsService {
   async findAll() {
     try {
       const firestore = this.firebaseService.firestore;
-      const studentsSnapshot = await firestore.collection('students').get();
+      
+      // Fetch all students in parallel with applications count
+      const [studentsSnapshot, applicationsSnapshot] = await Promise.all([
+        firestore.collection('students').get(),
+        firestore.collection('applications').get(),
+      ]);
+      
+      // Build application count map
+      const applicationCountMap = new Map<string, number>();
+      applicationsSnapshot.docs.forEach((doc) => {
+        const studentId = doc.data().studentId;
+        if (studentId) {
+          applicationCountMap.set(
+            studentId,
+            (applicationCountMap.get(studentId) || 0) + 1
+          );
+        }
+      });
+
+      // Map students with their application counts
+      const students = studentsSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        applicationsCount: applicationCountMap.get(doc.id) || 0,
+      }));
+
+      return students;
+    } catch (error) {
+      console.error('Error fetching students:', error);
+      throw new Error('Failed to fetch students');
+    }
+  }
+
+  async findAllMinimal() {
+    try {
+      const firestore = this.firebaseService.firestore;
+      const studentsSnapshot = await firestore
+        .collection('students')
+        .select('fullName', 'email')
+        .get();
       
       const students: any[] = [];
       for (const doc of studentsSnapshot.docs) {
         const data = doc.data();
-        
-        // Get applications count for this student
-        const applicationsSnapshot = await firestore
-          .collection('applications')
-          .where('studentId', '==', doc.id)
-          .count()
-          .get();
-
         students.push({
           id: doc.id,
-          ...data,
-          applicationsCount: applicationsSnapshot.data().count,
+          fullName: data.fullName || 'Unknown',
+          email: data.email || '',
         });
       }
 
       return students;
     } catch (error) {
-      console.error('Error fetching students:', error);
+      console.error('Error fetching students (minimal):', error);
       throw new Error('Failed to fetch students');
     }
   }

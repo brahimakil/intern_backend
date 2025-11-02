@@ -7,6 +7,11 @@ import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
 export class CompaniesController {
   constructor(private readonly companiesService: CompaniesService) {}
 
+  @Get('list/minimal')
+  findAllMinimal() {
+    return this.companiesService.findAllMinimal();
+  }
+
   @Get()
   findAll() {
     return this.companiesService.findAll();

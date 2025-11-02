@@ -9,29 +9,59 @@ export class CompaniesService {
   async findAll() {
     try {
       const firestore = this.firebaseService.firestore;
-      const companiesSnapshot = await firestore.collection('companies').get();
+      
+      // Fetch all companies in parallel with internships
+      const [companiesSnapshot, internshipsSnapshot] = await Promise.all([
+        firestore.collection('companies').get(),
+        firestore.collection('internships').get(),
+      ]);
+      
+      // Build internships count map
+      const internshipsCountMap = new Map<string, number>();
+      internshipsSnapshot.docs.forEach((doc) => {
+        const companyId = doc.data().companyId;
+        if (companyId) {
+          internshipsCountMap.set(
+            companyId,
+            (internshipsCountMap.get(companyId) || 0) + 1
+          );
+        }
+      });
+
+      // Map companies with their internships counts
+      const companies = companiesSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        internshipsCount: internshipsCountMap.get(doc.id) || 0,
+      }));
+
+      return companies;
+    } catch (error) {
+      console.error('Error fetching companies:', error);
+      throw new Error('Failed to fetch companies');
+    }
+  }
+
+  async findAllMinimal() {
+    try {
+      const firestore = this.firebaseService.firestore;
+      const companiesSnapshot = await firestore
+        .collection('companies')
+        .select('name')
+        .get();
       
       const companies: any[] = [];
       for (const doc of companiesSnapshot.docs) {
         const data = doc.data();
-        
-        // Get internships count for this company
-        const internshipsSnapshot = await firestore
-          .collection('internships')
-          .where('companyId', '==', doc.id)
-          .count()
-          .get();
-
         companies.push({
           id: doc.id,
-          ...data,
-          internshipsCount: internshipsSnapshot.data().count,
+          name: data.name || 'Unknown',
         });
       }
 
       return companies;
     } catch (error) {
-      console.error('Error fetching companies:', error);
+      console.error('Error fetching companies (minimal):', error);
       throw new Error('Failed to fetch companies');
     }
   }

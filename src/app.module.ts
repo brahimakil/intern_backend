@@ -7,6 +7,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { StudentsModule } from './students/students.module';
 import { CompaniesModule } from './companies/companies.module';
 import { InternshipsModule } from './internships/internships.module';
+import { ApplicationsModule } from './applications/applications.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { InternshipsModule } from './internships/internships.module';
     StudentsModule,
     CompaniesModule,
     InternshipsModule,
+    ApplicationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

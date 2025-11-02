@@ -7,6 +7,11 @@ import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
 export class InternshipsController {
   constructor(private readonly internshipsService: InternshipsService) {}
 
+  @Get('list/minimal')
+  findAllMinimal() {
+    return this.internshipsService.findAllMinimal();
+  }
+
   @Get()
   findAll() {
     return this.internshipsService.findAll();

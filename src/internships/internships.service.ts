@@ -11,10 +11,11 @@ export class InternshipsService {
       const firestore = this.firebaseService.firestore;
       
       // Fetch all data in parallel
-      const [internshipsSnapshot, companiesSnapshot, applicationsSnapshot] = await Promise.all([
+      const [internshipsSnapshot, companiesSnapshot, applicationsSnapshot, enrollmentsSnapshot] = await Promise.all([
         firestore.collection('internships').get(),
         firestore.collection('companies').get(),
         firestore.collection('applications').get(),
+        firestore.collection('enrollments').get(),
       ]);
       
       // Build company map
@@ -27,19 +28,31 @@ export class InternshipsService {
         });
       });
 
-      // Build applicants count map
-      const applicantsCountMap = new Map<string, number>();
+      // Build applications count map
+      const applicationsCountMap = new Map<string, number>();
       applicationsSnapshot.docs.forEach((doc) => {
         const internshipId = doc.data().internshipId;
         if (internshipId) {
-          applicantsCountMap.set(
+          applicationsCountMap.set(
             internshipId,
-            (applicantsCountMap.get(internshipId) || 0) + 1
+            (applicationsCountMap.get(internshipId) || 0) + 1
           );
         }
       });
 
-      // Map internships with company data and applicants count
+      // Build current students count map (from enrollments)
+      const currentStudentsCountMap = new Map<string, number>();
+      enrollmentsSnapshot.docs.forEach((doc) => {
+        const internshipId = doc.data().internshipId;
+        if (internshipId) {
+          currentStudentsCountMap.set(
+            internshipId,
+            (currentStudentsCountMap.get(internshipId) || 0) + 1
+          );
+        }
+      });
+
+      // Map internships with company data and counts
       const internships = internshipsSnapshot.docs.map((doc) => {
         const data = doc.data();
         const company = companyMap.get(data.companyId) || {
@@ -52,7 +65,8 @@ export class InternshipsService {
           ...data,
           companyName: company.name,
           companyLogo: company.logoUrl,
-          applicantsCount: applicantsCountMap.get(doc.id) || 0,
+          applicationsCount: applicationsCountMap.get(doc.id) || 0,
+          currentStudentsCount: currentStudentsCountMap.get(doc.id) || 0,
         };
       });
 
@@ -125,20 +139,37 @@ export class InternshipsService {
         }
       }
 
-      // Get applicants count
-      const applicationsSnapshot = await firestore
-        .collection('applications')
-        .where('internshipId', '==', id)
-        .count()
-        .get();
+      // Get applications count and current enrolled students count
+      const [applicationsSnapshot, enrollmentsSnapshot] = await Promise.all([
+        firestore
+          .collection('applications')
+          .where('internshipId', '==', id)
+          .count()
+          .get(),
+        firestore
+          .collection('enrollments')
+          .where('internshipId', '==', id)
+          .get(),
+      ]);
 
       return {
         id: doc.id,
-        ...data,
+        title: data.title,
+        description: data.description,
+        companyId: data.companyId,
+        requiredSkills: data.requiredSkills,
+        duration: data.duration,
+        location: data.location,
+        locationType: data.locationType,
+        status: data.status,
         companyName,
         companyEmail,
         companyLogo,
-        applicantsCount: applicationsSnapshot.data().count,
+        applicationsCount: applicationsSnapshot.data().count,
+        currentStudentsCount: enrollmentsSnapshot.size,
+        // Convert Firestore Timestamps to ISO strings
+        createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : (typeof data.createdAt === 'string' ? data.createdAt : new Date().toISOString()),
+        updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : (typeof data.updatedAt === 'string' ? data.updatedAt : new Date().toISOString()),
       };
     } catch (error) {
       console.error('Error fetching internship:', error);

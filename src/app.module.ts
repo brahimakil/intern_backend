@@ -8,6 +8,7 @@ import { StudentsModule } from './students/students.module';
 import { CompaniesModule } from './companies/companies.module';
 import { InternshipsModule } from './internships/internships.module';
 import { ApplicationsModule } from './applications/applications.module';
+import { EnrollmentsModule } from './enrollments/enrollments.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { ApplicationsModule } from './applications/applications.module';
     CompaniesModule,
     InternshipsModule,
     ApplicationsModule,
+    EnrollmentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

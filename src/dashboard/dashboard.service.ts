@@ -27,7 +27,11 @@ export class DashboardService {
         rejectedSnapshot,
         recentAppsSnapshot,
         recentActivitiesSnapshot,
-        trendsSnapshot
+        trendsSnapshot,
+        enrollmentsSnapshot,
+        pendingEnrollmentsSnapshot,
+        acceptedEnrollmentsSnapshot,
+        rejectedEnrollmentsSnapshot,
       ] = await Promise.all([
         firestore.collection('students').count().get(),
         firestore.collection('companies').where('status', '==', 'active').count().get(),
@@ -39,6 +43,10 @@ export class DashboardService {
         firestore.collection('applications').where('createdAt', '>=', sevenDaysAgo).count().get(),
         firestore.collection('applications').orderBy('createdAt', 'desc').limit(10).get(),
         firestore.collection('applications').where('createdAt', '>=', fiveWeeksAgo).select('createdAt').get(),
+        firestore.collection('enrollments').count().get(),
+        firestore.collection('enrollments').where('status', '==', 'pending').count().get(),
+        firestore.collection('enrollments').where('status', '==', 'accepted').count().get(),
+        firestore.collection('enrollments').where('status', '==', 'rejected').count().get(),
       ]);
 
       // Extract counts
@@ -50,6 +58,10 @@ export class DashboardService {
       const acceptedApplications = acceptedSnapshot.data().count;
       const rejectedApplications = rejectedSnapshot.data().count;
       const recentApplications = recentAppsSnapshot.data().count;
+      const totalEnrollments = enrollmentsSnapshot.data().count;
+      const pendingEnrollments = pendingEnrollmentsSnapshot.data().count;
+      const acceptedEnrollments = acceptedEnrollmentsSnapshot.data().count;
+      const rejectedEnrollments = rejectedEnrollmentsSnapshot.data().count;
 
       // Get unique student and internship IDs from recent activities
       const studentIds = new Set<string>();
@@ -153,6 +165,10 @@ export class DashboardService {
         acceptedApplications,
         rejectedApplications,
         recentApplications,
+        totalEnrollments,
+        pendingEnrollments,
+        acceptedEnrollments,
+        rejectedEnrollments,
         recentActivities,
         applicationTrends: weeklyTrends,
         trendLabels: weekLabels,
@@ -168,6 +184,10 @@ export class DashboardService {
         acceptedApplications: 0,
         rejectedApplications: 0,
         recentApplications: 0,
+        totalEnrollments: 0,
+        pendingEnrollments: 0,
+        acceptedEnrollments: 0,
+        rejectedEnrollments: 0,
         recentActivities: [],
         applicationTrends: [0, 0, 0, 0, 0],
       };

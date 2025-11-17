@@ -162,6 +162,7 @@ export class InternshipsService {
         location: data.location,
         locationType: data.locationType,
         status: data.status,
+        logoUrl: data.logoUrl || '',
         companyName,
         companyEmail,
         companyLogo,

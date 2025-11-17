@@ -8,8 +8,10 @@ async function bootstrap() {
   // Enable CORS for frontend (allow all origins in production if needed, or specify)
   app.enableCors({
     origin: [
-      'http://localhost:5173',
-      'https://intern-admin-zeta.vercel.app',
+      'http://localhost:5173', // Admin portal
+      'http://localhost:5174', // Company portal
+      'https://intern-admin-zeta.vercel.app', // Admin production
+      'https://intern-company-eight.vercel.app', // Company production
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],

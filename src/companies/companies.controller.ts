@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Patch, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { CompaniesService } from './companies.service';
 import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
 
@@ -30,6 +31,23 @@ export class CompaniesController {
   @Put(':id')
   update(@Param('id') id: string, @Body() updateCompanyDto: any) {
     return this.companiesService.update(id, updateCompanyDto);
+  }
+
+  @Patch(':id')
+  patch(@Param('id') id: string, @Body() updateCompanyDto: any) {
+    return this.companiesService.update(id, updateCompanyDto);
+  }
+
+  @Post(':id/logo')
+  @UseInterceptors(FileInterceptor('logo'))
+  async uploadLogo(
+    @Param('id') id: string,
+    @UploadedFile() file: any,
+  ) {
+    if (!file) {
+      throw new Error('No file uploaded');
+    }
+    return this.companiesService.uploadLogo(id, file);
   }
 
   @Delete(':id')

@@ -9,6 +9,7 @@ import { CompaniesModule } from './companies/companies.module';
 import { InternshipsModule } from './internships/internships.module';
 import { ApplicationsModule } from './applications/applications.module';
 import { EnrollmentsModule } from './enrollments/enrollments.module';
+import { CompanyAuthController } from './auth/company-auth.controller';
 
 @Module({
   imports: [
@@ -28,7 +29,7 @@ import { EnrollmentsModule } from './enrollments/enrollments.module';
     ApplicationsModule,
     EnrollmentsModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, CompanyAuthController],
   providers: [AppService],
 })
 export class AppModule {}

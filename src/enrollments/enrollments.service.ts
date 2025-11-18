@@ -13,7 +13,7 @@ export class EnrollmentsService {
       // Fetch all data in parallel
       const [enrollmentsSnapshot, studentsSnapshot, internshipsSnapshot, companiesSnapshot] = await Promise.all([
         firestore.collection('enrollments').get(),
-        firestore.collection('students').select('fullName').get(),
+        firestore.collection('students').get(),
         firestore.collection('internships').select('title', 'companyId').get(),
         firestore.collection('companies').select('name').get(),
       ]);
@@ -21,7 +21,11 @@ export class EnrollmentsService {
       // Build lookup maps for faster access
       const studentsMap = new Map();
       studentsSnapshot.docs.forEach(doc => {
-        studentsMap.set(doc.id, doc.data()?.fullName || 'Unknown');
+        const data = doc.data();
+        studentsMap.set(doc.id, {
+          fullName: data?.fullName || 'Unknown',
+          email: data?.email || 'N/A',
+        });
       });
 
       const internshipsMap = new Map();
@@ -42,6 +46,7 @@ export class EnrollmentsService {
       const enrollments = enrollmentsSnapshot.docs.map((doc) => {
         const data = doc.data();
         const internship = internshipsMap.get(data.internshipId) || { title: 'Unknown', companyId: data.companyId };
+        const student = studentsMap.get(data.studentId) || { fullName: 'Unknown', email: 'N/A' };
         
         return {
           id: doc.id,
@@ -49,7 +54,8 @@ export class EnrollmentsService {
           internshipId: data.internshipId,
           companyId: internship.companyId || data.companyId,
           status: data.status,
-          studentName: studentsMap.get(data.studentId) || 'Unknown',
+          studentName: student.fullName,
+          studentEmail: student.email,
           internshipTitle: internship.title,
           companyName: companiesMap.get(internship.companyId || data.companyId) || 'Unknown',
           // Convert Firestore Timestamps to ISO strings

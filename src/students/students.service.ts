@@ -114,6 +114,7 @@ export class StudentsService {
         fullName: createStudentDto.fullName,
         major: createStudentDto.major,
         profilePhotoUrl: createStudentDto.profilePhotoUrl || '',
+        cvUrl: createStudentDto.cvUrl || createStudentDto.resumeUrl || '',
         status: createStudentDto.status || 'active',
         role: 'student',
         uid: userRecord.uid,
@@ -152,6 +153,7 @@ export class StudentsService {
         fullName: updateStudentDto.fullName,
         major: updateStudentDto.major,
         profilePhotoUrl: updateStudentDto.profilePhotoUrl,
+        cvUrl: updateStudentDto.cvUrl || updateStudentDto.resumeUrl,
         status: updateStudentDto.status,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };

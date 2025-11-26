@@ -23,6 +23,9 @@ export class EnrollmentsController {
       if (error.message === 'This student is already enrolled in this internship') {
         throw new HttpException(error.message, HttpStatus.CONFLICT);
       }
+      if (error.message === 'This student was previously rejected for this internship and cannot re-enroll') {
+        throw new HttpException(error.message, HttpStatus.FORBIDDEN);
+      }
       if (error.message === 'Internship not found') {
         throw new HttpException(error.message, HttpStatus.NOT_FOUND);
       }

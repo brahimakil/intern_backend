@@ -11,11 +11,12 @@ export class EnrollmentsService {
       const firestore = this.firebaseService.firestore;
       
       // Fetch all data in parallel
-      const [enrollmentsSnapshot, studentsSnapshot, internshipsSnapshot, companiesSnapshot] = await Promise.all([
+      const [enrollmentsSnapshot, studentsSnapshot, internshipsSnapshot, companiesSnapshot, applicationsSnapshot] = await Promise.all([
         firestore.collection('enrollments').get(),
         firestore.collection('students').get(),
         firestore.collection('internships').select('title', 'companyId').get(),
         firestore.collection('companies').select('name').get(),
+        firestore.collection('applications').select('studentId', 'internshipId', 'resumeUrl').get(),
       ]);
 
       // Build lookup maps for faster access
@@ -25,7 +26,17 @@ export class EnrollmentsService {
         studentsMap.set(doc.id, {
           fullName: data?.fullName || 'Unknown',
           email: data?.email || 'N/A',
+          resumeUrl: data?.resumeUrl || data?.cvUrl || null,
         });
+      });
+
+      const applicationsMap = new Map();
+      applicationsSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        const resumeUrl = data.resumeUrl || data.cvUrl;
+        if (data.studentId && data.internshipId && resumeUrl) {
+          applicationsMap.set(`${data.studentId}_${data.internshipId}`, resumeUrl);
+        }
       });
 
       const internshipsMap = new Map();
@@ -47,6 +58,8 @@ export class EnrollmentsService {
         const data = doc.data();
         const internship = internshipsMap.get(data.internshipId) || { title: 'Unknown', companyId: data.companyId };
         const student = studentsMap.get(data.studentId) || { fullName: 'Unknown', email: 'N/A' };
+        const appKey = `${data.studentId}_${data.internshipId}`;
+        const applicationResumeUrl = applicationsMap.get(appKey);
         
         return {
           id: doc.id,
@@ -56,6 +69,7 @@ export class EnrollmentsService {
           status: data.status,
           studentName: student.fullName,
           studentEmail: student.email,
+          studentResumeUrl: applicationResumeUrl || student.resumeUrl,
           internshipTitle: internship.title,
           companyName: companiesMap.get(internship.companyId || data.companyId) || 'Unknown',
           // Convert Firestore Timestamps to ISO strings
@@ -126,6 +140,12 @@ export class EnrollmentsService {
         .get();
       
       if (!existingEnrollments.empty) {
+        const existingEnrollment = existingEnrollments.docs[0].data();
+        const status = existingEnrollment.status;
+        
+        if (status === 'rejected') {
+          throw new Error('This student was previously rejected for this internship and cannot re-enroll');
+        }
         throw new Error('This student is already enrolled in this internship');
       }
       

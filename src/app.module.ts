@@ -9,6 +9,7 @@ import { CompaniesModule } from './companies/companies.module';
 import { InternshipsModule } from './internships/internships.module';
 import { ApplicationsModule } from './applications/applications.module';
 import { EnrollmentsModule } from './enrollments/enrollments.module';
+import { AdminsModule } from './admins/admins.module';
 import { CompanyAuthController } from './auth/company-auth.controller';
 
 @Module({
@@ -28,6 +29,7 @@ import { CompanyAuthController } from './auth/company-auth.controller';
     InternshipsModule,
     ApplicationsModule,
     EnrollmentsModule,
+    AdminsModule,
   ],
   controllers: [AppController, CompanyAuthController],
   providers: [AppService],

@@ -23,6 +23,11 @@ export class ApplicationsController {
     return this.applicationsService.findAll();
   }
 
+  @Get('internship/:internshipId')
+  findByInternship(@Param('internshipId') internshipId: string) {
+    return this.applicationsService.findByInternship(internshipId);
+  }
+
   @Get('student/:studentId')
   findByStudent(@Param('studentId') studentId: string) {
     return this.applicationsService.findByStudent(studentId);

@@ -11,12 +11,11 @@ export class EnrollmentsService {
       const firestore = this.firebaseService.firestore;
       
       // Fetch all data in parallel
-      const [enrollmentsSnapshot, studentsSnapshot, internshipsSnapshot, companiesSnapshot, applicationsSnapshot] = await Promise.all([
+      const [enrollmentsSnapshot, studentsSnapshot, internshipsSnapshot, companiesSnapshot] = await Promise.all([
         firestore.collection('enrollments').get(),
         firestore.collection('students').get(),
         firestore.collection('internships').select('title', 'companyId').get(),
         firestore.collection('companies').select('name').get(),
-        firestore.collection('applications').select('studentId', 'internshipId', 'resumeUrl').get(),
       ]);
 
       // Build lookup maps for faster access
@@ -30,14 +29,8 @@ export class EnrollmentsService {
         });
       });
 
-      const applicationsMap = new Map();
-      applicationsSnapshot.docs.forEach(doc => {
-        const data = doc.data();
-        const resumeUrl = data.resumeUrl || data.cvUrl;
-        if (data.studentId && data.internshipId && resumeUrl) {
-          applicationsMap.set(`${data.studentId}_${data.internshipId}`, resumeUrl);
-        }
-      });
+      // Note: We don't use application resumeUrl for enrollment CV display
+      // The enrollment should show the student's actual CV, not application URLs
 
       const internshipsMap = new Map();
       internshipsSnapshot.docs.forEach(doc => {
@@ -57,9 +50,7 @@ export class EnrollmentsService {
       const enrollments = enrollmentsSnapshot.docs.map((doc) => {
         const data = doc.data();
         const internship = internshipsMap.get(data.internshipId) || { title: 'Unknown', companyId: data.companyId };
-        const student = studentsMap.get(data.studentId) || { fullName: 'Unknown', email: 'N/A' };
-        const appKey = `${data.studentId}_${data.internshipId}`;
-        const applicationResumeUrl = applicationsMap.get(appKey);
+        const student = studentsMap.get(data.studentId) || { fullName: 'Unknown', email: 'N/A', resumeUrl: null };
         
         return {
           id: doc.id,
@@ -69,7 +60,7 @@ export class EnrollmentsService {
           status: data.status,
           studentName: student.fullName,
           studentEmail: student.email,
-          studentResumeUrl: applicationResumeUrl || student.resumeUrl,
+          studentResumeUrl: student.resumeUrl,
           internshipTitle: internship.title,
           companyName: companiesMap.get(internship.companyId || data.companyId) || 'Unknown',
           // Convert Firestore Timestamps to ISO strings
@@ -239,6 +230,54 @@ export class EnrollmentsService {
     } catch (error) {
       console.error('Error deleting enrollment:', error);
       throw new Error('Failed to delete enrollment');
+    }
+  }
+
+  async findByInternship(internshipId: string) {
+    try {
+      const firestore = this.firebaseService.firestore;
+      
+      // Fetch enrollments for this internship and related data in parallel
+      const [enrollmentsSnapshot, studentsSnapshot] = await Promise.all([
+        firestore.collection('enrollments').where('internshipId', '==', internshipId).get(),
+        firestore.collection('students').get(),
+      ]);
+
+      // Build students lookup map
+      const studentsMap = new Map();
+      studentsSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        studentsMap.set(doc.id, {
+          fullName: data?.fullName || 'Unknown',
+          email: data?.email || 'N/A',
+          resumeUrl: data?.resumeUrl || data?.cvUrl || null,
+        });
+      });
+
+      // Map enrollments with student data
+      const enrollments = enrollmentsSnapshot.docs.map((doc) => {
+        const data = doc.data();
+        const student = studentsMap.get(data.studentId) || { fullName: 'Unknown', email: 'N/A', resumeUrl: null };
+        
+        return {
+          id: doc.id,
+          studentId: data.studentId,
+          internshipId: data.internshipId,
+          companyId: data.companyId,
+          status: data.status,
+          studentName: student.fullName,
+          studentEmail: student.email,
+          studentResumeUrl: student.resumeUrl,
+          enrolledDate: data.enrolledDate?.toDate ? data.enrolledDate.toDate().toISOString() : (typeof data.enrolledDate === 'string' ? data.enrolledDate : new Date().toISOString()),
+          createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : (typeof data.createdAt === 'string' ? data.createdAt : new Date().toISOString()),
+          updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : (typeof data.updatedAt === 'string' ? data.updatedAt : new Date().toISOString()),
+        };
+      });
+
+      return enrollments;
+    } catch (error) {
+      console.error('Error fetching internship enrollments:', error);
+      throw new Error('Failed to fetch internship enrollments');
     }
   }
 }

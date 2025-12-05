@@ -66,6 +66,29 @@ export class CompaniesService {
     }
   }
 
+  async getUniqueIndustries() {
+    try {
+      const firestore = this.firebaseService.firestore;
+      const companiesSnapshot = await firestore
+        .collection('companies')
+        .select('industry')
+        .get();
+
+      const industries = new Set<string>();
+      for (const doc of companiesSnapshot.docs) {
+        const industry = doc.data().industry;
+        if (industry && industry.trim() !== '') {
+          industries.add(industry.trim());
+        }
+      }
+
+      return Array.from(industries).sort((a, b) => a.localeCompare(b));
+    } catch (error) {
+      console.error('Error fetching unique industries:', error);
+      throw new Error('Failed to fetch unique industries');
+    }
+  }
+
   async findOne(id: string) {
     try {
       const firestore = this.firebaseService.firestore;

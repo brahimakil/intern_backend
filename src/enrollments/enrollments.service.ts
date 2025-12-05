@@ -280,4 +280,57 @@ export class EnrollmentsService {
       throw new Error('Failed to fetch internship enrollments');
     }
   }
+
+  async findByStudent(studentId: string) {
+    try {
+      const firestore = this.firebaseService.firestore;
+      
+      // Fetch enrollments for this student and related data in parallel
+      const [enrollmentsSnapshot, internshipsSnapshot, companiesSnapshot] = await Promise.all([
+        firestore.collection('enrollments').where('studentId', '==', studentId).get(),
+        firestore.collection('internships').get(),
+        firestore.collection('companies').get(),
+      ]);
+
+      // Build internships lookup map
+      const internshipsMap = new Map();
+      internshipsSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        internshipsMap.set(doc.id, {
+          title: data?.title || 'Unknown',
+          companyId: data?.companyId,
+        });
+      });
+
+      // Build companies lookup map
+      const companiesMap = new Map();
+      companiesSnapshot.docs.forEach(doc => {
+        companiesMap.set(doc.id, doc.data()?.name || 'Unknown');
+      });
+
+      // Map enrollments with internship and company data
+      const enrollments = enrollmentsSnapshot.docs.map((doc) => {
+        const data = doc.data();
+        const internship = internshipsMap.get(data.internshipId) || { title: 'Unknown', companyId: data.companyId };
+        
+        return {
+          id: doc.id,
+          studentId: data.studentId,
+          internshipId: data.internshipId,
+          companyId: internship.companyId || data.companyId,
+          status: data.status,
+          internshipTitle: internship.title,
+          companyName: companiesMap.get(internship.companyId || data.companyId) || 'Unknown',
+          enrolledDate: data.enrolledDate?.toDate ? data.enrolledDate.toDate().toISOString() : (typeof data.enrolledDate === 'string' ? data.enrolledDate : new Date().toISOString()),
+          createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : (typeof data.createdAt === 'string' ? data.createdAt : new Date().toISOString()),
+          updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : (typeof data.updatedAt === 'string' ? data.updatedAt : new Date().toISOString()),
+        };
+      });
+
+      return enrollments;
+    } catch (error) {
+      console.error('Error fetching student enrollments:', error);
+      throw new Error('Failed to fetch student enrollments');
+    }
+  }
 }

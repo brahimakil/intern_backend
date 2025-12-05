@@ -12,6 +12,8 @@ async function bootstrap() {
       'http://localhost:5174', // Company portal
       'https://intern-admin-zeta.vercel.app', // Admin production
       'https://intern-company-eight.vercel.app', // Company production
+      'http://192.168.0.103:8081', // Mobile app (Expo)
+      'exp://192.168.0.103:8081', // Mobile app (Expo scheme)
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],

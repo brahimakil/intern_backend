@@ -15,6 +15,11 @@ export class EnrollmentsController {
     return this.enrollmentsService.findByInternship(internshipId);
   }
 
+  @Get('student/:studentId')
+  findByStudent(@Param('studentId') studentId: string) {
+    return this.enrollmentsService.findByStudent(studentId);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.enrollmentsService.findOne(id);

@@ -7,11 +7,11 @@ export interface CreateApplicationDto {
   internshipId: string;
   companyId: string;
   status?: 'pending' | 'accepted' | 'rejected';
-  coverLetter: string;
-  resumeUrl: string;
+  coverLetter?: string;
+  resumeUrl?: string;
   githubUrl?: string;
   portfolioUrl?: string;
-  projectDescription: string;
+  projectDescription?: string;
   notes?: string;
 }
 

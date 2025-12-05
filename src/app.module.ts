@@ -10,6 +10,8 @@ import { InternshipsModule } from './internships/internships.module';
 import { ApplicationsModule } from './applications/applications.module';
 import { EnrollmentsModule } from './enrollments/enrollments.module';
 import { AdminsModule } from './admins/admins.module';
+import { AssignmentsModule } from './assignments/assignments.module';
+import { AiModule } from './ai/ai.module';
 import { CompanyAuthController } from './auth/company-auth.controller';
 
 @Module({
@@ -30,6 +32,8 @@ import { CompanyAuthController } from './auth/company-auth.controller';
     ApplicationsModule,
     EnrollmentsModule,
     AdminsModule,
+    AssignmentsModule,
+    AiModule,
   ],
   controllers: [AppController, CompanyAuthController],
   providers: [AppService],

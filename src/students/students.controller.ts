@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { StudentsService } from './students.service';
 import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
 
@@ -30,6 +31,35 @@ export class StudentsController {
   @Put(':id')
   update(@Param('id') id: string, @Body() updateStudentDto: any) {
     return this.studentsService.update(id, updateStudentDto);
+  }
+
+  @Patch(':id/gemini-key')
+  async updateGeminiKey(@Param('id') id: string, @Body() body: { apiKey: string }) {
+    return this.studentsService.updateGeminiKey(id, body.apiKey);
+  }
+
+  @Post(':id/cv')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadCV(
+    @Param('id') id: string,
+    @UploadedFile() file: any,
+  ) {
+    if (!file) {
+      throw new Error('No file uploaded');
+    }
+    return this.studentsService.uploadCV(id, file);
+  }
+
+  @Post(':id/profile-photo')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadProfilePhoto(
+    @Param('id') id: string,
+    @UploadedFile() file: any,
+  ) {
+    if (!file) {
+      throw new Error('No file uploaded');
+    }
+    return this.studentsService.uploadProfilePhoto(id, file);
   }
 
   @Delete(':id')

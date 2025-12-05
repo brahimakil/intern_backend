@@ -13,6 +13,11 @@ export class CompaniesController {
     return this.companiesService.findAllMinimal();
   }
 
+  @Get('industries/unique')
+  getUniqueIndustries() {
+    return this.companiesService.getUniqueIndustries();
+  }
+
   @Get()
   findAll() {
     return this.companiesService.findAll();

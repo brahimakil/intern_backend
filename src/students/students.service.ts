@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { FirebaseService } from '../firebase/firebase.service';
+import { EncryptionUtil } from '../utils/encryption.util';
 import * as admin from 'firebase-admin';
 
 @Injectable()
@@ -113,8 +114,12 @@ export class StudentsService {
         email: createStudentDto.email,
         fullName: createStudentDto.fullName,
         major: createStudentDto.major,
+        address: createStudentDto.address || '',
         profilePhotoUrl: createStudentDto.profilePhotoUrl || '',
         cvUrl: createStudentDto.cvUrl || createStudentDto.resumeUrl || '',
+        geminiApiKey: '',
+        cvParsedData: null,
+        cvLastUpdated: null,
         status: createStudentDto.status || 'active',
         role: 'student',
         uid: userRecord.uid,
@@ -152,8 +157,12 @@ export class StudentsService {
       const updateData = {
         fullName: updateStudentDto.fullName,
         major: updateStudentDto.major,
+        address: updateStudentDto.address,
         profilePhotoUrl: updateStudentDto.profilePhotoUrl,
         cvUrl: updateStudentDto.cvUrl || updateStudentDto.resumeUrl,
+        geminiApiKey: updateStudentDto.geminiApiKey,
+        cvParsedData: updateStudentDto.cvParsedData,
+        cvLastUpdated: updateStudentDto.cvLastUpdated,
         status: updateStudentDto.status,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
@@ -207,6 +216,112 @@ export class StudentsService {
     } catch (error) {
       console.error('Error deleting student:', error);
       throw new Error('Failed to delete student');
+    }
+  }
+
+  async updateGeminiKey(id: string, apiKey: string) {
+    try {
+      const firestore = this.firebaseService.firestore;
+      const docRef = firestore.collection('students').doc(id);
+      
+      const doc = await docRef.get();
+      if (!doc.exists) {
+        throw new Error('Student not found');
+      }
+
+      // Encrypt the API key before storing
+      const encryptedKey = EncryptionUtil.encrypt(apiKey);
+      
+      await docRef.update({
+        geminiApiKey: encryptedKey,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return { message: 'Gemini API key updated successfully' };
+    } catch (error) {
+      console.error('Error updating Gemini API key:', error);
+      throw new Error('Failed to update Gemini API key');
+    }
+  }
+
+  async uploadCV(id: string, file: any) {
+    try {
+      const firestore = this.firebaseService.firestore;
+      const storage = this.firebaseService.storage;
+      
+      const docRef = firestore.collection('students').doc(id);
+      const doc = await docRef.get();
+      
+      if (!doc.exists) {
+        throw new Error('Student not found');
+      }
+
+      // Upload to Firebase Storage
+      const bucket = storage.bucket();
+      const fileName = `students/${id}/cv_${Date.now()}.pdf`;
+      const fileUpload = bucket.file(fileName);
+
+      await fileUpload.save(file.buffer, {
+        metadata: {
+          contentType: file.mimetype,
+        },
+      });
+
+      // Make file publicly accessible
+      await fileUpload.makePublic();
+      const cvUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+
+      // Update student document
+      await docRef.update({
+        cvUrl,
+        cvLastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return { cvUrl, message: 'CV uploaded successfully' };
+    } catch (error) {
+      console.error('Error uploading CV:', error);
+      throw new Error('Failed to upload CV');
+    }
+  }
+
+  async uploadProfilePhoto(id: string, file: any) {
+    try {
+      const firestore = this.firebaseService.firestore;
+      const storage = this.firebaseService.storage;
+      
+      const docRef = firestore.collection('students').doc(id);
+      const doc = await docRef.get();
+      
+      if (!doc.exists) {
+        throw new Error('Student not found');
+      }
+
+      // Upload to Firebase Storage
+      const bucket = storage.bucket();
+      const fileName = `students/${id}/profile_${Date.now()}.jpg`;
+      const fileUpload = bucket.file(fileName);
+
+      await fileUpload.save(file.buffer, {
+        metadata: {
+          contentType: file.mimetype,
+        },
+      });
+
+      // Make file publicly accessible
+      await fileUpload.makePublic();
+      const profilePhotoUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+
+      // Update student document
+      await docRef.update({
+        profilePhotoUrl,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return { profilePhotoUrl, message: 'Profile photo uploaded successfully' };
+    } catch (error) {
+      console.error('Error uploading profile photo:', error);
+      throw new Error('Failed to upload profile photo');
     }
   }
 }

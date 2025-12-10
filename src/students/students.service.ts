@@ -96,6 +96,48 @@ export class StudentsService {
     }
   }
 
+  async register(registerDto: any, user: any) {
+    try {
+      const firestore = this.firebaseService.firestore;
+      const studentId = user.email.replace(/[@.]/g, '_');
+      
+      // Check if student already exists
+      const docRef = firestore.collection('students').doc(studentId);
+      const doc = await docRef.get();
+      
+      if (doc.exists) {
+        return { id: doc.id, ...doc.data() };
+      }
+
+      const studentData = {
+        email: user.email,
+        fullName: registerDto.fullName,
+        major: registerDto.major,
+        address: '',
+        profilePhotoUrl: '',
+        cvUrl: '',
+        geminiApiKey: '',
+        cvParsedData: null,
+        cvLastUpdated: null,
+        status: 'active',
+        role: 'student',
+        uid: user.uid,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      };
+
+      await docRef.set(studentData);
+
+      return {
+        id: studentId,
+        ...studentData,
+      };
+    } catch (error) {
+      console.error('Error registering student:', error);
+      throw new Error('Failed to register student');
+    }
+  }
+
   async create(createStudentDto: any) {
     try {
       const firestore = this.firebaseService.firestore;

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Patch, Delete, Body, Param, UseGuards, UseInterceptors, UploadedFile, Req } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, UseGuards, UseInterceptors, UploadedFile, Req, HttpException, HttpStatus } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { StudentsService } from './students.service';
 import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
@@ -24,8 +24,12 @@ export class StudentsController {
   }
 
   @Post('register')
-  register(@Body() body: any, @Req() req: any) {
-    return this.studentsService.register(body, req.user);
+  async register(@Body() body: any, @Req() req: any) {
+    try {
+      return await this.studentsService.register(body, req.user);
+    } catch (error) {
+      throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
 
   @Post()

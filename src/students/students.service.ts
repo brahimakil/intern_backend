@@ -99,6 +99,11 @@ export class StudentsService {
   async register(registerDto: any, user: any) {
     try {
       const firestore = this.firebaseService.firestore;
+      
+      if (!user || !user.email) {
+        throw new Error('User email is missing from token');
+      }
+
       const studentId = user.email.replace(/[@.]/g, '_');
       
       // Check if student already exists
@@ -111,8 +116,8 @@ export class StudentsService {
 
       const studentData = {
         email: user.email,
-        fullName: registerDto.fullName,
-        major: registerDto.major,
+        fullName: registerDto.fullName || '',
+        major: registerDto.major || '',
         address: '',
         profilePhotoUrl: '',
         cvUrl: '',
@@ -121,7 +126,7 @@ export class StudentsService {
         cvLastUpdated: null,
         status: 'active',
         role: 'student',
-        uid: user.uid,
+        uid: user.uid || '',
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
@@ -134,7 +139,7 @@ export class StudentsService {
       };
     } catch (error) {
       console.error('Error registering student:', error);
-      throw new Error('Failed to register student');
+      throw error;
     }
   }
 

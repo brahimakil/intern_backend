@@ -6,7 +6,7 @@ import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
 @Controller('students')
 @UseGuards(FirebaseAuthGuard)
 export class StudentsController {
-  constructor(private readonly studentsService: StudentsService) {}
+  constructor(private readonly studentsService: StudentsService) { }
 
   @Get('list/minimal')
   findAllMinimal() {
@@ -40,11 +40,6 @@ export class StudentsController {
   @Put(':id')
   update(@Param('id') id: string, @Body() updateStudentDto: any) {
     return this.studentsService.update(id, updateStudentDto);
-  }
-
-  @Patch(':id/gemini-key')
-  async updateGeminiKey(@Param('id') id: string, @Body() body: { apiKey: string }) {
-    return this.studentsService.updateGeminiKey(id, body.apiKey);
   }
 
   @Post(':id/cv')

@@ -5,18 +5,18 @@ import * as admin from 'firebase-admin';
 
 @Injectable()
 export class StudentsService {
-  constructor(private firebaseService: FirebaseService) {}
+  constructor(private firebaseService: FirebaseService) { }
 
   async findAll() {
     try {
       const firestore = this.firebaseService.firestore;
-      
+
       // Fetch all students in parallel with applications count
       const [studentsSnapshot, applicationsSnapshot] = await Promise.all([
         firestore.collection('students').get(),
         firestore.collection('applications').get(),
       ]);
-      
+
       // Build application count map
       const applicationCountMap = new Map<string, number>();
       applicationsSnapshot.docs.forEach((doc) => {
@@ -50,7 +50,7 @@ export class StudentsService {
         .collection('students')
         .select('fullName', 'email')
         .get();
-      
+
       const students: any[] = [];
       for (const doc of studentsSnapshot.docs) {
         const data = doc.data();
@@ -99,17 +99,17 @@ export class StudentsService {
   async register(registerDto: any, user: any) {
     try {
       const firestore = this.firebaseService.firestore;
-      
+
       if (!user || !user.email) {
         throw new Error('User email is missing from token');
       }
 
       const studentId = user.email.replace(/[@.]/g, '_');
-      
+
       // Check if student already exists
       const docRef = firestore.collection('students').doc(studentId);
       const doc = await docRef.get();
-      
+
       if (doc.exists) {
         return { id: doc.id, ...doc.data() };
       }
@@ -121,7 +121,6 @@ export class StudentsService {
         address: '',
         profilePhotoUrl: '',
         cvUrl: '',
-        geminiApiKey: '',
         cvParsedData: null,
         cvLastUpdated: null,
         status: 'active',
@@ -164,7 +163,6 @@ export class StudentsService {
         address: createStudentDto.address || '',
         profilePhotoUrl: createStudentDto.profilePhotoUrl || '',
         cvUrl: createStudentDto.cvUrl || createStudentDto.resumeUrl || '',
-        geminiApiKey: '',
         cvParsedData: null,
         cvLastUpdated: null,
         status: createStudentDto.status || 'active',
@@ -182,11 +180,11 @@ export class StudentsService {
       };
     } catch (error) {
       console.error('Error creating student:', error);
-      
+
       if (error.code === 'auth/email-already-exists') {
         throw new Error('This email is already registered');
       }
-      
+
       throw new Error('Failed to create student');
     }
   }
@@ -195,7 +193,7 @@ export class StudentsService {
     try {
       const firestore = this.firebaseService.firestore;
       const docRef = firestore.collection('students').doc(id);
-      
+
       const doc = await docRef.get();
       if (!doc.exists) {
         throw new Error('Student not found');
@@ -207,7 +205,6 @@ export class StudentsService {
         address: updateStudentDto.address,
         profilePhotoUrl: updateStudentDto.profilePhotoUrl,
         cvUrl: updateStudentDto.cvUrl || updateStudentDto.resumeUrl,
-        geminiApiKey: updateStudentDto.geminiApiKey,
         cvParsedData: updateStudentDto.cvParsedData,
         cvLastUpdated: updateStudentDto.cvLastUpdated,
         status: updateStudentDto.status,
@@ -215,7 +212,7 @@ export class StudentsService {
       };
 
       // Remove undefined fields
-      Object.keys(updateData).forEach(key => 
+      Object.keys(updateData).forEach(key =>
         updateData[key] === undefined && delete updateData[key]
       );
 
@@ -236,7 +233,7 @@ export class StudentsService {
     try {
       const firestore = this.firebaseService.firestore;
       const auth = this.firebaseService.auth;
-      
+
       const docRef = firestore.collection('students').doc(id);
       const doc = await docRef.get();
 
@@ -266,39 +263,14 @@ export class StudentsService {
     }
   }
 
-  async updateGeminiKey(id: string, apiKey: string) {
-    try {
-      const firestore = this.firebaseService.firestore;
-      const docRef = firestore.collection('students').doc(id);
-      
-      const doc = await docRef.get();
-      if (!doc.exists) {
-        throw new Error('Student not found');
-      }
-
-      // Encrypt the API key before storing
-      const encryptedKey = EncryptionUtil.encrypt(apiKey);
-      
-      await docRef.update({
-        geminiApiKey: encryptedKey,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-
-      return { message: 'Gemini API key updated successfully' };
-    } catch (error) {
-      console.error('Error updating Gemini API key:', error);
-      throw new Error('Failed to update Gemini API key');
-    }
-  }
-
   async uploadCV(id: string, file: any) {
     try {
       const firestore = this.firebaseService.firestore;
       const storage = this.firebaseService.storage;
-      
+
       const docRef = firestore.collection('students').doc(id);
       const doc = await docRef.get();
-      
+
       if (!doc.exists) {
         throw new Error('Student not found');
       }
@@ -336,10 +308,10 @@ export class StudentsService {
     try {
       const firestore = this.firebaseService.firestore;
       const storage = this.firebaseService.storage;
-      
+
       const docRef = firestore.collection('students').doc(id);
       const doc = await docRef.get();
-      
+
       if (!doc.exists) {
         throw new Error('Student not found');
       }

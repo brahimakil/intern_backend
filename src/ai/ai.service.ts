@@ -257,7 +257,7 @@ export class AiService {
           }));
         }
 
-        // Prepare candidates list
+        // Prepare candidates list with company names
         const candidates = internshipsSnapshot.docs.map(doc => {
           const data = doc.data();
           return {
@@ -268,35 +268,102 @@ export class AiService {
           };
         });
 
-        // Use AI to intelligently match the request
-        const matchPrompt = `
-User Input: "${chatDto.message}"
-Conversation Context: "${context.substring(context.length - 800)}" 
+        // ========================================================
+        // SMART ORDINAL MATCHING: "first one", "second one", "#1", etc.
+        // ========================================================
+        const ordinalPatterns = [
+          { pattern: /(?:the\s+)?(?:first|1st|#1|number\s*1|option\s*1)\s*(?:one)?/i, index: 0 },
+          { pattern: /(?:the\s+)?(?:second|2nd|#2|number\s*2|option\s*2)\s*(?:one)?/i, index: 1 },
+          { pattern: /(?:the\s+)?(?:third|3rd|#3|number\s*3|option\s*3)\s*(?:one)?/i, index: 2 },
+          { pattern: /(?:the\s+)?(?:fourth|4th|#4|number\s*4|option\s*4)\s*(?:one)?/i, index: 3 },
+          { pattern: /(?:the\s+)?(?:fifth|5th|#5|number\s*5|option\s*5)\s*(?:one)?/i, index: 4 },
+        ];
 
-Task: Identify the exact internship the user wants to apply for from the list below.
-Available Internships:
-${candidates.map(c => `- ID: ${c.id} | Title: ${c.title} | Company: ${c.company}`).join('\n')}
+        let ordinalIndex = -1;
+        for (const { pattern, index } of ordinalPatterns) {
+          if (pattern.test(message)) {
+            ordinalIndex = index;
+            break;
+          }
+        }
 
-Instructions:
-1. Analyze the User Input and Context to find the matching internship.
-2. If the user mentions a specific company (e.g. "at Google"), strictly match the Company field.
-3. If the user just says "yes" or "confirm", look at the Context to see what they are confirming.
-4. If the user refers to the "first one", "second one", "number 1", etc., LOOK AT THE CONVERSATION CONTEXT to find the numbered list of recommendations. Match the ordinal number to the internship title/company in the list.
-5. If no single clear match is found, return "NONE".
-6. Return ONLY the ID string of the matching internship. Do not write sentences.`;
+        // If user used ordinal reference, extract the numbered list from context
+        if (ordinalIndex >= 0) {
+          // Extract internship titles mentioned in the numbered list from context
+          // Patterns like: "1. **Software developer internship at Iphone company**"
+          const numberedListPattern = /(\d+)\.\s*\*?\*?([^*\n]+?)(?:\*\*|\s*(?:\(|-))/gi;
+          const contextMatches: { num: number; title: string }[] = [];
+          
+          let match;
+          const fullContext = chatDto.context || '';
+          while ((match = numberedListPattern.exec(fullContext)) !== null) {
+            contextMatches.push({
+              num: parseInt(match[1]),
+              title: match[2].trim().toLowerCase()
+            });
+          }
 
-        const matchResult = await this.generateAIResponse(matchPrompt);
-        const matchedId = matchResult.replace(/[^a-zA-Z0-9]/g, '').trim(); // Clean up ID
-        
-        const found = candidates.find(c => c.id === matchedId || matchedId.includes(c.id));
-        
-        if (found) {
-           targetInternship = { id: found.id, ...found.originalData };
+          // Find the item at the ordinal index (1-based in context, 0-based in our array)
+          const targetNum = ordinalIndex + 1;
+          const contextItem = contextMatches.find(m => m.num === targetNum);
+          
+          if (contextItem) {
+            // Now match this title to our candidates
+            for (const candidate of candidates) {
+              const candidateTitle = candidate.title.toLowerCase();
+              const candidateCompany = candidate.company.toLowerCase();
+              const combinedCandidate = `${candidateTitle} at ${candidateCompany}`;
+              
+              // Check if the context item matches this candidate
+              if (
+                candidateTitle.includes(contextItem.title) ||
+                contextItem.title.includes(candidateTitle) ||
+                combinedCandidate.includes(contextItem.title) ||
+                contextItem.title.includes(combinedCandidate.substring(0, 20))
+              ) {
+                targetInternship = { id: candidate.id, ...candidate.originalData };
+                break;
+              }
+            }
+          }
+        }
+
+        // If no ordinal match found, try direct title/company matching
+        if (!targetInternship) {
+          const searchText = message.replace(/apply|enroll|submit|sign up|register|for|to|in|the/gi, '').trim();
+          
+          for (const candidate of candidates) {
+            const candidateTitle = candidate.title.toLowerCase();
+            const candidateCompany = candidate.company.toLowerCase();
+            
+            if (
+              searchText.includes(candidateTitle) ||
+              candidateTitle.includes(searchText) ||
+              searchText.includes(candidateCompany) ||
+              candidateCompany.includes(searchText) ||
+              (searchText.length > 5 && `${candidateTitle} at ${candidateCompany}`.includes(searchText))
+            ) {
+              targetInternship = { id: candidate.id, ...candidate.originalData };
+              break;
+            }
+          }
+        }
+
+        // If still no match, search the full conversation context
+        if (!targetInternship) {
+          const fullConversation = `${context}\n${message}`.toLowerCase();
+          for (const candidate of candidates) {
+            const candidateTitle = candidate.title.toLowerCase();
+            if (fullConversation.includes(candidateTitle)) {
+              targetInternship = { id: candidate.id, ...candidate.originalData };
+              break;
+            }
+          }
         }
 
         if (!targetInternship) {
           return {
-            response: "I couldn't identify which internship you want to apply for. Please specify the exact internship title, for example: \"Apply for Software Developer Intern\".",
+            response: "I couldn't identify which internship you want to apply for. Please specify the exact internship title, for example: \"Apply for Software Developer Intern at Iphone company\".",
           };
         }
 

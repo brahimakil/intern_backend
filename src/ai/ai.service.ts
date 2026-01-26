@@ -218,7 +218,12 @@ export class AiService {
         message.includes('close to me') ||
         message.includes('my location') ||
         message.includes('my address') ||
-        message.includes('nearby')
+        message.includes('nearby') ||
+        message.includes('tell me about') ||
+        message.includes('explain') ||
+        message.includes('details') ||
+        message.includes('describe') ||
+        message.includes('info about')
       );
 
       // Build rich student profile context
@@ -266,7 +271,7 @@ export class AiService {
         // Use AI to intelligently match the request
         const matchPrompt = `
 User Input: "${chatDto.message}"
-Conversation Context: "${context.substring(context.length - 500)}" 
+Conversation Context: "${context.substring(context.length - 800)}" 
 
 Task: Identify the exact internship the user wants to apply for from the list below.
 Available Internships:
@@ -276,8 +281,9 @@ Instructions:
 1. Analyze the User Input and Context to find the matching internship.
 2. If the user mentions a specific company (e.g. "at Google"), strictly match the Company field.
 3. If the user just says "yes" or "confirm", look at the Context to see what they are confirming.
-4. If no single clear match is found, return "NONE".
-5. Return ONLY the ID string of the matching internship. Do not write sentences.`;
+4. If the user refers to the "first one", "second one", "number 1", etc., LOOK AT THE CONVERSATION CONTEXT to find the numbered list of recommendations. Match the ordinal number to the internship title/company in the list.
+5. If no single clear match is found, return "NONE".
+6. Return ONLY the ID string of the matching internship. Do not write sentences.`;
 
         const matchResult = await this.generateAIResponse(matchPrompt);
         const matchedId = matchResult.replace(/[^a-zA-Z0-9]/g, '').trim(); // Clean up ID

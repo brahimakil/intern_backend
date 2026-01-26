@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { FirebaseService } from '../firebase/firebase.service';
 import { ChatDto } from './dto/chat.dto';
 import { AnalyzeCVDto } from './dto/analyze-cv.dto';
@@ -6,20 +7,33 @@ import { InternshipAssistantDto } from './dto/internship-assistant.dto';
 import * as admin from 'firebase-admin';
 import { OpenAI } from 'openai';
 
-// HuggingFace configuration
-const HF_API_KEY = process.env.HF_TOKEN;
+// AI Model configuration
 const AI_MODEL = 'deepseek-ai/DeepSeek-V3.2:novita';
 
 @Injectable()
 export class AiService {
   private openai: OpenAI;
+  private readonly hfApiKey: string;
 
-  constructor(private firebaseService: FirebaseService) {
+  constructor(
+    private firebaseService: FirebaseService,
+    private configService: ConfigService,
+  ) {
+    // Get HF_TOKEN from ConfigService
+    this.hfApiKey = this.configService.get<string>('HF_TOKEN') || '';
+    
+    // Validate HF_TOKEN exists
+    if (!this.hfApiKey) {
+      throw new Error('HF_TOKEN environment variable is required for AI service');
+    }
+
     // Initialize OpenAI client with HuggingFace endpoint
     this.openai = new OpenAI({
       baseURL: 'https://router.huggingface.co/v1',
-      apiKey: HF_API_KEY,
+      apiKey: this.hfApiKey,
     });
+    
+    console.log('AI Service initialized successfully with HuggingFace');
   }
 
   /**
@@ -194,6 +208,10 @@ export class AiService {
         message.includes('recommend') ||
         message.includes('suggest') ||
         message.includes('find') ||
+        message.includes('search') ||
+        message.includes('look') ||
+        message.includes('company') ||
+        message.includes('companies') ||
         message.includes('close to my major') ||
         message.includes('related to') ||
         message.includes('near me') ||
@@ -202,6 +220,9 @@ export class AiService {
         message.includes('my address') ||
         message.includes('nearby')
       );
+
+      // Build rich student profile context
+      const studentProfileContext = await this.buildContext(student);
 
       let prompt = '';
 
@@ -216,40 +237,55 @@ export class AiService {
           .get();
 
         let targetInternship: any = null;
-        let searchTitle = '';
 
-        // Determine which internship to apply for
-        if (isPendingConfirmation && pendingApplyMatch) {
-          // User confirmed a previous suggestion
-          searchTitle = pendingApplyMatch[1].toLowerCase().trim();
-        } else if (hasExplicitRequest && explicitApplyMatch) {
-          // User explicitly requested to apply
-          searchTitle = explicitApplyMatch[1].toLowerCase().trim();
+        // Fetch companies to provide better context for matching
+        const companyIds = [...new Set(internshipsSnapshot.docs.map(d => d.data().companyId).filter(Boolean))];
+        const companyMap = new Map<string, string>();
+        
+        if (companyIds.length > 0) {
+          await Promise.all(companyIds.map(async (id) => {
+            const snap = await firestore.collection('companies').doc(id).get();
+            const data = snap.data();
+            if (snap.exists && data) {
+              companyMap.set(String(id), data.name);
+            }
+          }));
         }
 
-        // Search for the internship by title
-        if (searchTitle) {
-          for (const doc of internshipsSnapshot.docs) {
-            const data = doc.data();
-            const title = data.title.toLowerCase();
-            if (title.includes(searchTitle) || searchTitle.includes(title)) {
-              targetInternship = { id: doc.id, ...data };
-              break;
-            }
-          }
-        }
+        // Prepare candidates list
+        const candidates = internshipsSnapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            title: data.title,
+            company: companyMap.get(data.companyId) || 'Unknown Company',
+            originalData: data
+          };
+        });
 
-        // If no match by extracted title, search the full conversation
-        if (!targetInternship) {
-          const fullConversation = `${context}\n${message}`;
-          for (const doc of internshipsSnapshot.docs) {
-            const data = doc.data();
-            const title = data.title.toLowerCase();
-            if (fullConversation.includes(title)) {
-              targetInternship = { id: doc.id, ...data };
-              break;
-            }
-          }
+        // Use AI to intelligently match the request
+        const matchPrompt = `
+User Input: "${chatDto.message}"
+Conversation Context: "${context.substring(context.length - 500)}" 
+
+Task: Identify the exact internship the user wants to apply for from the list below.
+Available Internships:
+${candidates.map(c => `- ID: ${c.id} | Title: ${c.title} | Company: ${c.company}`).join('\n')}
+
+Instructions:
+1. Analyze the User Input and Context to find the matching internship.
+2. If the user mentions a specific company (e.g. "at Google"), strictly match the Company field.
+3. If the user just says "yes" or "confirm", look at the Context to see what they are confirming.
+4. If no single clear match is found, return "NONE".
+5. Return ONLY the ID string of the matching internship. Do not write sentences.`;
+
+        const matchResult = await this.generateAIResponse(matchPrompt);
+        const matchedId = matchResult.replace(/[^a-zA-Z0-9]/g, '').trim(); // Clean up ID
+        
+        const found = candidates.find(c => c.id === matchedId || matchedId.includes(c.id));
+        
+        if (found) {
+           targetInternship = { id: found.id, ...found.originalData };
         }
 
         if (!targetInternship) {
@@ -348,6 +384,8 @@ export class AiService {
 
           let locationPrompt = `You are a helpful internship career assistant for ${student.fullName}, a ${student.major} student.
 
+${studentProfileContext}
+
 Student's address: ${studentAddress}
 
 Internships near the student's location that match their major (${student.major}):
@@ -369,6 +407,8 @@ Provide a concise response (3-4 sentences). First recommend internships near the
 
         prompt = `You are a helpful internship career assistant for ${student.fullName}, a ${student.major} student.
 
+${studentProfileContext}
+
 Conversation context:
 ${chatDto.context || 'No previous context'}
 
@@ -379,16 +419,18 @@ User question: ${chatDto.message}
 
 IMPORTANT RULES:
 1. Do NOT apply for any internship unless the user explicitly says "apply for [internship title]"
-2. Only recommend and provide information about internships
+2. Only recommend and provide information about internships based on the User's Profile (Skills, Major, Interests).
 3. If the user seems interested, tell them: "To apply, just say 'Apply for [internship title]'"
 4. Keep response concise (3-4 sentences)
 
-Analyze the industries and match them to the student's major (${student.major}). Recommend 2-3 most relevant internships based on industry alignment.`;
+Analyze the industries and match them to the student's major (${student.major}) and skills. Recommend 2-3 most relevant internships based on profile alignment.`;
       } else {
         // ========================================================
         // HANDLE GENERAL CONVERSATION
         // ========================================================
         prompt = `You are a helpful internship career assistant for ${student.fullName}, a ${student.major} student.
+
+${studentProfileContext}
 
 Conversation context:
 ${chatDto.context || 'No previous context'}
@@ -399,7 +441,8 @@ IMPORTANT RULES:
 1. Do NOT apply for any internship or take any actions unless explicitly asked
 2. Do NOT interpret casual responses like "yes", "ok", "sure" as application requests
 3. If the user wants to apply, they need to say "Apply for [internship title]"
-4. Respond naturally to greetings and general questions
+4. Respond naturally to greetings and general questions.
+5. If the user asks about their profile, referring to the "Student Profile" provided above.
 
 Respond naturally and concisely in 1-2 short sentences. If the user is just greeting or making small talk, respond briefly.`;
       }

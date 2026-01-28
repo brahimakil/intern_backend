@@ -21,7 +21,7 @@ export class AiService {
   ) {
     // Get HF_TOKEN from ConfigService
     this.hfApiKey = this.configService.get<string>('HF_TOKEN') || '';
-    
+
     // Validate HF_TOKEN exists
     if (!this.hfApiKey) {
       throw new Error('HF_TOKEN environment variable is required for AI service');
@@ -32,7 +32,7 @@ export class AiService {
       baseURL: 'https://router.huggingface.co/v1',
       apiKey: this.hfApiKey,
     });
-    
+
     console.log('AI Service initialized successfully with HuggingFace');
   }
 
@@ -180,8 +180,15 @@ export class AiService {
       // ========================================================
       // STEP 1: Detect if this is a confirmation of pending apply
       // ========================================================
-      const pendingApplyMatch = originalContext.match(/would you like me to apply for (?:the )?["']?(.+?)["']?\??/i);
-      const isPendingConfirmation = pendingApplyMatch &&
+      // Use regex with global flag to find all matches, then pick the last one (most recent)
+      // Handles both quoted and unquoted titles (e.g. "Software Intern" or Software Intern)
+      const allPendingMatches = Array.from(originalContext.matchAll(/would you like me to apply for (?:the )?(?:["'](.+?)["']|([^"?.]+))/gi));
+      const lastPendingMatch = allPendingMatches.length > 0 ? allPendingMatches[allPendingMatches.length - 1] : null;
+
+      // Extract the text from whichever group matched (quoted or unquoted)
+      const confirmedInternshipText = lastPendingMatch ? (lastPendingMatch[1] || lastPendingMatch[2]) : null;
+
+      const isPendingConfirmation = confirmedInternshipText &&
         (message === 'yes' || message === 'yes please' || message === 'yes, apply' ||
           message === 'confirm' || message === 'yes, confirm' || message === 'sure' ||
           message === 'ok' || message === 'okay' || message === 'go ahead');
@@ -245,7 +252,7 @@ export class AiService {
         // Fetch companies
         const companyIds = [...new Set(internshipsSnapshot.docs.map(d => d.data().companyId).filter(Boolean))];
         const companyMap = new Map<string, string>();
-        
+
         if (companyIds.length > 0) {
           await Promise.all(companyIds.map(async (id) => {
             const snap = await firestore.collection('companies').doc(id).get();
@@ -275,24 +282,50 @@ export class AiService {
         // PRIORITY 1: If user is CONFIRMING a previous application prompt
         // Extract the internship name from "Would you like me to apply for 'X'?"
         // ========================================================
-        if (isPendingConfirmation && pendingApplyMatch) {
-          const confirmedTitle = pendingApplyMatch[1].toLowerCase().trim();
+        if (isPendingConfirmation && confirmedInternshipText) {
+          const confirmedTitle = confirmedInternshipText.toLowerCase().trim();
           console.log(`[AI] User confirmed application for: "${confirmedTitle}"`);
-          
-          // Find the internship that matches the confirmed title
+
+          // Find the internship that matches the confirmed title using a simple scoring system
+          let bestMatch: any = null;
+          let highestScore = 0;
+
           for (const candidate of candidates) {
-            if (
-              candidate.titleLower === confirmedTitle ||
-              candidate.titleLower.includes(confirmedTitle) ||
-              confirmedTitle.includes(candidate.titleLower) ||
-              candidate.fullName.includes(confirmedTitle)
-            ) {
-              targetInternship = { id: candidate.id, ...candidate.originalData };
-              console.log(`[AI] Confirmed match found: "${candidate.title}" at "${candidate.company}"`);
-              break;
+            let score = 0;
+            const confirmedTitleNormalized = confirmedTitle.toLowerCase();
+
+            // Exact full name match is best
+            if (candidate.fullName === confirmedTitleNormalized) {
+              score = 100;
+            }
+            // Exact title match is second best
+            else if (candidate.titleLower === confirmedTitleNormalized) {
+              score = 90;
+            }
+            // Full name includes confirmed title
+            else if (candidate.fullName.includes(confirmedTitleNormalized)) {
+              score = 80;
+            }
+            // Title includes confirmed title
+            else if (candidate.titleLower.includes(confirmedTitleNormalized)) {
+              score = 70;
+            }
+            // Confirmed title includes title
+            else if (confirmedTitleNormalized.includes(candidate.titleLower)) {
+              score = 60;
+            }
+
+            if (score > highestScore) {
+              highestScore = score;
+              bestMatch = candidate;
             }
           }
-          
+
+          if (bestMatch && highestScore >= 60) {
+            targetInternship = { id: bestMatch.id, ...bestMatch.originalData };
+            console.log(`[AI] Confirmed match found: "${bestMatch.title}" at "${bestMatch.company}" (Score: ${highestScore})`);
+          }
+
           // If we found a match from confirmation, skip all other matching logic
           if (targetInternship) {
             // Go directly to duplicate check and enrollment (handled below)
@@ -304,144 +337,218 @@ export class AiService {
         // ========================================================
         // Only do this if we haven't found target from confirmation
         if (!targetInternship) {
-        // The AI formats responses like:
-        // "1. **Software developer internship at Iphone company** - description"
-        // or "1. **Title** at **Company** - description"
-        // We need to extract these and map ordinals to actual internships
-        
-        const extractedList: { num: number; text: string }[] = [];
-        
-        // Multiple patterns to catch different AI response formats
-        const patterns = [
-          // Pattern: "1. **Title at Company**" or "1. **Title**"
-          /(\d+)\.\s*\*\*([^*]+)\*\*/gi,
-          // Pattern: "1. Title at Company -" or "1. Title at Company ("
-          /(\d+)\.\s*([^(\n*-]+?)(?:\s*[-(\n]|$)/gi,
-        ];
-        
-        for (const pattern of patterns) {
-          let match;
-          while ((match = pattern.exec(originalContext)) !== null) {
-            const num = parseInt(match[1]);
-            const text = match[2].trim().toLowerCase();
-            // Avoid duplicates
-            if (!extractedList.find(e => e.num === num)) {
-              extractedList.push({ num, text });
+          // The AI formats responses like:
+          // "1. **Software developer internship at Iphone company** - description"
+          // or "1. **Title** at **Company** - description"
+          // We need to extract these and map ordinals to actual internships
+
+          const extractedList: { num: number; text: string }[] = [];
+
+          // Multiple patterns to catch different AI response formats
+          const patterns = [
+            // Pattern: "1. **Title at Company**" or "1. **Title**"
+            /(\d+)\.\s*\*\*([^*]+)\*\*/gi,
+            // Pattern: "1. Title at Company -" or "1. Title at Company ("
+            /(\d+)\.\s*([^(\n*-]+?)(?:\s*[-(\n]|$)/gi,
+          ];
+
+          for (const pattern of patterns) {
+            let match;
+            while ((match = pattern.exec(originalContext)) !== null) {
+              const num = parseInt(match[1]);
+              const text = match[2].trim().toLowerCase();
+              // Avoid duplicates
+              if (!extractedList.find(e => e.num === num)) {
+                extractedList.push({ num, text });
+              }
             }
           }
-        }
-        
-        // Sort by number
-        extractedList.sort((a, b) => a.num - b.num);
 
-        // ========================================================
-        // DETECT ORDINAL REFERENCE: "first one", "second one", "#1"
-        // ========================================================
-        const ordinalPatterns = [
-          { pattern: /(?:the\s+)?(?:first|1st|#\s*1|number\s*1|option\s*1|one)\s*(?:one)?/i, index: 0 },
-          { pattern: /(?:the\s+)?(?:second|2nd|#\s*2|number\s*2|option\s*2|two)\s*(?:one)?/i, index: 1 },
-          { pattern: /(?:the\s+)?(?:third|3rd|#\s*3|number\s*3|option\s*3|three)\s*(?:one)?/i, index: 2 },
-          { pattern: /(?:the\s+)?(?:fourth|4th|#\s*4|number\s*4|option\s*4|four)\s*(?:one)?/i, index: 3 },
-          { pattern: /(?:the\s+)?(?:fifth|5th|#\s*5|number\s*5|option\s*5|five)\s*(?:one)?/i, index: 4 },
-        ];
+          // Sort by number
+          extractedList.sort((a, b) => a.num - b.num);
 
-        let ordinalIndex = -1;
-        for (const { pattern, index } of ordinalPatterns) {
-          if (pattern.test(message)) {
-            ordinalIndex = index;
-            break;
+          // ========================================================
+          // DETECT ORDINAL REFERENCE: "first one", "second one", "#1"
+          // ========================================================
+          const ordinalPatterns = [
+            { pattern: /(?:the\s+)?(?:first|1st|#\s*1|number\s*1|option\s*1|one)\s*(?:one)?/i, index: 0 },
+            { pattern: /(?:the\s+)?(?:second|2nd|#\s*2|number\s*2|option\s*2|two)\s*(?:one)?/i, index: 1 },
+            { pattern: /(?:the\s+)?(?:third|3rd|#\s*3|number\s*3|option\s*3|three)\s*(?:one)?/i, index: 2 },
+            { pattern: /(?:the\s+)?(?:fourth|4th|#\s*4|number\s*4|option\s*4|four)\s*(?:one)?/i, index: 3 },
+            { pattern: /(?:the\s+)?(?:fifth|5th|#\s*5|number\s*5|option\s*5|five)\s*(?:one)?/i, index: 4 },
+          ];
+
+          let ordinalIndex = -1;
+          for (const { pattern, index } of ordinalPatterns) {
+            if (pattern.test(message)) {
+              ordinalIndex = index;
+              break;
+            }
           }
-        }
 
-        // If user used ordinal reference
-        if (ordinalIndex >= 0 && extractedList.length > 0) {
-          const targetNum = ordinalIndex + 1;
-          const targetItem = extractedList.find(e => e.num === targetNum);
-          
-          if (targetItem) {
-            console.log(`[AI] User wants item #${targetNum}: "${targetItem.text}"`);
-            
-            // Find best matching candidate
-            let bestMatch: any = null;
-            let bestScore = 0;
-            
+          // If user used ordinal reference
+          if (ordinalIndex >= 0 && extractedList.length > 0) {
+            const targetNum = ordinalIndex + 1;
+            const targetItem = extractedList.find(e => e.num === targetNum);
+
+            if (targetItem) {
+              console.log(`[AI] User wants item #${targetNum}: "${targetItem.text}"`);
+
+              // Find best matching candidate
+              let bestMatch: any = null;
+              let bestScore = 0;
+
+              for (const candidate of candidates) {
+                let score = 0;
+
+                // Exact match gets highest score
+                if (candidate.fullName === targetItem.text) {
+                  score = 100;
+                }
+                // Check if extracted text contains title and company
+                else if (targetItem.text.includes(candidate.titleLower) && targetItem.text.includes(candidate.companyLower)) {
+                  score = 90;
+                }
+                // Check if title matches
+                else if (targetItem.text.includes(candidate.titleLower) || candidate.titleLower.includes(targetItem.text)) {
+                  score = 70;
+                }
+                // Check if company matches
+                else if (targetItem.text.includes(candidate.companyLower)) {
+                  score = 50;
+                }
+                // Partial word matching
+                else {
+                  const targetWords = targetItem.text.split(/\s+/);
+                  const candidateWords = candidate.fullName.split(/\s+/);
+                  const matchingWords = targetWords.filter(w => w.length > 2 && candidateWords.some(cw => cw.includes(w) || w.includes(cw)));
+                  score = matchingWords.length * 10;
+                }
+
+                if (score > bestScore) {
+                  bestScore = score;
+                  bestMatch = candidate;
+                }
+              }
+
+              if (bestMatch && bestScore >= 30) {
+                console.log(`[AI] Matched to: "${bestMatch.title}" at "${bestMatch.company}" (score: ${bestScore})`);
+                targetInternship = { id: bestMatch.id, ...bestMatch.originalData };
+              }
+            }
+          }
+
+          // Try semantic matching using OpenAI
+          if (!targetInternship) {
+            try {
+              const candidateList = candidates.map(c => `ID: ${c.id}, Title: ${c.title}, Company: ${c.company}`).join('\n');
+              const aiMatchResponse = await this.openai.chat.completions.create({
+                model: AI_MODEL,
+                messages: [
+                  {
+                    role: 'system',
+                    content: 'You are a matching engine. Your task is to identify the EXACT internship ID the user wants to apply for based on their request. Return ONLY the ID or the word "NONE" if no match is found. Do not explain.'
+                  },
+                  {
+                    role: 'user',
+                    content: `User Request: "${message}"\n\nAvailable Internships:\n${candidateList}\n\nMatching ID:`
+                  }
+                ],
+                temperature: 0,
+              });
+
+              const matchedId = aiMatchResponse.choices[0]?.message?.content?.trim();
+              if (matchedId && matchedId !== 'NONE') {
+                const match = candidates.find(c => c.id === matchedId || matchedId.includes(c.id));
+                if (match) {
+                  targetInternship = { id: match.id, ...match.originalData };
+                  console.log(`[AI] Semantic match found via AI: "${match.title}" at "${match.company}"`);
+                }
+              }
+            } catch (aiError) {
+              console.error('Semantic matching error:', aiError);
+            }
+          }
+
+          // If semantic matching failed, use the scoring logic
+          if (!targetInternship) {
+            // Priority: Use the capture group from our regex match if it exists
+            let searchText = explicitApplyMatch?.[1]?.trim() || '';
+
+            // Fallback to the manual cleanup if regex capture was empty
+            if (!searchText) {
+              searchText = message
+                .replace(/(?:apply|enroll|submit|sign up|register|let'?s?\s*(?:go|apply))\s+(?:for|to|in|with)?\s*/gi, '')
+                .replace(/(?:the\s+)?(?:internship|position|job|opportunity)/gi, '')
+                .trim();
+            }
+
+            // Cleanup noise words at the start (e.g., "in software", "to software", "at mobile")
+            searchText = searchText.replace(/^(?:in|to|at|for|the|a|an)\s+/i, '').trim();
+
+            if (searchText.length > 2) {
+              let bestDirectMatch: any = null;
+              let highestDirectScore = 0;
+
+              for (const candidate of candidates) {
+                let score = 0;
+                const searchLower = searchText.toLowerCase();
+
+                // 1. Exact full name match
+                if (candidate.fullName === searchLower) {
+                  score = 100;
+                }
+                // 2. Exact title match
+                else if (candidate.titleLower === searchLower) {
+                  score = 90;
+                }
+                // 3. Both title and company mentioned (Check for word boundaries)
+                else {
+                  const titleWords = candidate.titleLower.split(/\s+/).filter(w => w.length > 0);
+                  const companyWords = candidate.companyLower.split(/\s+/).filter(w => w.length > 0);
+
+                  const hasAllTitleWords = titleWords.every(word =>
+                    new RegExp(`\\b${word}\\b`, 'i').test(searchLower)
+                  );
+
+                  const hasAllCompanyWords = companyWords.every(word =>
+                    new RegExp(`\\b${word}\\b`, 'i').test(searchLower)
+                  );
+
+                  if (hasAllTitleWords && hasAllCompanyWords) {
+                    score = 85;
+                  } else if (hasAllTitleWords) {
+                    score = 70;
+                  } else if (hasAllCompanyWords) {
+                    score = 40;
+                  }
+                }
+
+                if (score > highestDirectScore) {
+                  highestDirectScore = score;
+                  bestDirectMatch = candidate;
+                }
+              }
+
+              if (bestDirectMatch && highestDirectScore >= 70) {
+                targetInternship = { id: bestDirectMatch.id, ...bestDirectMatch.originalData };
+                console.log(`[AI] Direct match found by scoring: "${bestDirectMatch.title}" at "${bestDirectMatch.company}" (Score: ${highestDirectScore})`);
+              }
+            }
+          }
+
+          // Final fallback: search context for ANY candidate title (least reliable)
+          if (!targetInternship) {
+            // Only do this if the context explicitly mentions the internship
             for (const candidate of candidates) {
-              let score = 0;
-              
-              // Exact match gets highest score
-              if (candidate.fullName === targetItem.text) {
-                score = 100;
-              }
-              // Check if extracted text contains title and company
-              else if (targetItem.text.includes(candidate.titleLower) && targetItem.text.includes(candidate.companyLower)) {
-                score = 90;
-              }
-              // Check if title matches
-              else if (targetItem.text.includes(candidate.titleLower) || candidate.titleLower.includes(targetItem.text)) {
-                score = 70;
-              }
-              // Check if company matches
-              else if (targetItem.text.includes(candidate.companyLower)) {
-                score = 50;
-              }
-              // Partial word matching
-              else {
-                const targetWords = targetItem.text.split(/\s+/);
-                const candidateWords = candidate.fullName.split(/\s+/);
-                const matchingWords = targetWords.filter(w => w.length > 2 && candidateWords.some(cw => cw.includes(w) || w.includes(cw)));
-                score = matchingWords.length * 10;
-              }
-              
-              if (score > bestScore) {
-                bestScore = score;
-                bestMatch = candidate;
-              }
-            }
-            
-            if (bestMatch && bestScore >= 30) {
-              console.log(`[AI] Matched to: "${bestMatch.title}" at "${bestMatch.company}" (score: ${bestScore})`);
-              targetInternship = { id: bestMatch.id, ...bestMatch.originalData };
-            }
-          }
-        }
-
-        // If no ordinal match, try direct text matching from user message
-        if (!targetInternship) {
-          // Clean up the message to extract the internship name
-          const searchText = message
-            .replace(/(?:apply|enroll|submit|sign up|register|let'?s?\s*(?:go|apply))\s+(?:for|to|in|with)?\s*/gi, '')
-            .replace(/(?:the\s+)?(?:internship|position|job|opportunity)/gi, '')
-            .trim();
-          
-          if (searchText.length > 2) {
-            for (const candidate of candidates) {
-              if (
-                candidate.titleLower.includes(searchText) ||
-                searchText.includes(candidate.titleLower) ||
-                candidate.companyLower.includes(searchText) ||
-                searchText.includes(candidate.companyLower) ||
-                candidate.fullName.includes(searchText)
-              ) {
+              // Check if this specific internship was mentioned in context
+              if (contextLower.includes(candidate.titleLower) && contextLower.includes(candidate.companyLower)) {
                 targetInternship = { id: candidate.id, ...candidate.originalData };
-                console.log(`[AI] Direct match found: "${candidate.title}" at "${candidate.company}"`);
+                console.log(`[AI] Context fallback match: "${candidate.title}" at "${candidate.company}"`);
                 break;
               }
             }
           }
-        }
-
-        // Final fallback: search context for ANY candidate title (least reliable)
-        if (!targetInternship) {
-          // Only do this if the context explicitly mentions the internship
-          for (const candidate of candidates) {
-            // Check if this specific internship was mentioned in context
-            if (contextLower.includes(candidate.titleLower) && contextLower.includes(candidate.companyLower)) {
-              targetInternship = { id: candidate.id, ...candidate.originalData };
-              console.log(`[AI] Context fallback match: "${candidate.title}" at "${candidate.company}"`);
-              break;
-            }
-          }
-        }
         } // End of "if (!targetInternship)" block from PRIORITY 2
 
         if (!targetInternship) {
